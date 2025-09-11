@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>random_linear_combination</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark} body{margin:2rem auto;max-width:860px;padding:0 1rem;
+font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji"}
+h1,h2,h3{line-height:1.25} h1{font-size:1.9rem;margin-top:0} h2{font-size:1.5rem;margin-top:2.2rem} h3{font-size:1.2rem;margin-top:1.6rem}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:.95em}
+pre{background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:1rem;overflow:auto}
+blockquote{margin:1rem 0;padding:.5rem 1rem;border-left:4px solid #888;background:rgba(127,127,127,.08);border-radius:6px}
+ul{padding-left:1.25rem} hr{border:none;border-top:1px solid rgba(127,127,127,.3);margin:2rem 0}
+</style>
+<script>
+  window.MathJax={ tex: {inlineMath:[['$','$'],['\\(','\\)']], displayMath:[['$$','$$'],['\\[','\\]']]} };
+</script>
+<script async id="MathJax-script"
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head><body>
+<h1 id="when-one-random-check-isnt-many-a-subtle-soundness-trap-in-group-tests">When One Random Check Isn’t Many: A Subtle Soundness Trap in Group Tests</h1>
+<p><strong>The good news (fields).</strong>
+In a lot of crypto, you need to verify a <em>bunch of equations</em> at once. Think of equations</p>
+<p>$$
+E_1=0,\; E_2=0,\; \dots,\; E_s=0
+$$</p>
+<p>where each $E_i$ is an expression over a large finite field $\mathbb F$ (e.g., constraints of a circuit, polynomial identities, signature checks in a batch). Instead of checking all $s$ equalities separately, you can <strong>batch</strong> them by picking random coefficients $$r_1,\dots,r_s \stackrel{\$}{\leftarrow} \mathbb F$$ and verifying a <em>single</em> equation:</p>
+<p>$$
+\sum_{i=1}^s r_i\,E_i \;\stackrel{?}{=}\; 0 \quad\text{over }\mathbb F.
+$$</p>
+<p>If at least one $E_i\neq 0$, then (because this is one linear relation over a field) the combined check fails except with probability exactly $1/|\mathbb F|$. When $|\mathbb F|\ge 2^{128}$, that’s <strong>already negligible</strong>. This “random linear batching” is the engine behind Freivalds’ check, Schwartz–Zippel style tests, PCS/IPA batching, and many signature batch verifiers.</p>
+<p><strong>The trap (groups with cofactors).</strong></p>
+<p>We want to convince a verifier that an elliptic-curve group really has <strong>prime order $n$</strong>. A standard necessary-and-sufficient check is</p>
+<p>$$
+[n]P_i = O \quad \text{for } i=1,\dots,s,
+$$</p>
+<p>where each $P_i$ is sampled independently (e.g., via hash-to-curve) and $O$ is the identity. If the true group size is actually $N=k\cdot n$ with a cofactor $k\ge2$, then for a random $P$ we have $[n]P$ essentially uniform in a size-$k$ subgroup, so</p>
+<p>$$
+\Pr([n]P=O)=1/k.
+$$</p>
+<p>Independence across the $s$ equations gives the <strong>naïve soundness</strong></p>
+<p>$$
+\Pr\big(\forall i,\ [n]P_i=O\big)=(1/k)^s,
+$$</p>
+<p>which is great: exponential decay in $s$.</p>
+<p><strong>Why it’s tempting to batch them like in the field setting.</strong>
+From the world of fields, we know a powerful trick: to check many equalities $E_i=0$ over a large field $\mathbb F$, pick random $r_i\in\mathbb F$ and verify a single combined equality $\sum r_i E_i=0$. If any $E_i\neq0$, this fails except with probability $1/|\mathbb F|$ (already negligible). It’s natural to try the <strong>same batching move</strong> here: sample random coefficients $c_1,\dots,c_s$, form one point</p>
+<p>$$
+Q \;=\; \sum_{i=1}^s [c_i]\,P_i,
+$$</p>
+<p>and replace the $s$ checks by a <strong>single</strong> group equation</p>
+<p>$$
+[n]Q \stackrel{?}= O.
+$$</p>
+<p><strong>Why that “field-style” batching quietly breaks soundness in groups.</strong></p>
+<h2 id="ground-up-explanation-no-hand-waving">Ground-up explanation (no hand-waving)</h2>
+<ul>
+<li><strong>Group and identity.</strong> $G$ is a finite abelian group with identity $O$.</li>
+<li><strong>Scalar multiplication.</strong> $[n]: G \to G$, $P \mapsto nP$, is a homomorphism.</li>
+<li><strong>Kernel.</strong> $\ker([n]) = { P \in G \mid [n]P = O }$.</li>
+<li><strong>Image.</strong> $\mathrm{Im}([n]) = { [n]P \mid P \in G }$.</li>
+</ul>
+<p>If $|G| = k n$ with $n$ prime:</p>
+<ul>
+<li>$|\ker([n])| = n$, and $|\mathrm{Im}([n])| = k$.</li>
+<li>Write $H := \mathrm{Im}([n])$; it has exactly $k$ elements.</li>
+</ul>
+<p>For random $P$, define $R = [n]P \in H$; then $R$ is (close to) uniform in $H$, so $\Pr(R=O) = 1/k$.</p>
+<h3 id="naive-test-revisited">Naïve test revisited</h3>
+<p>Pick independent $P_1,\dots,P_s$; set $R_i = [n]P_i \in H$.
+Check $[n]P_i = O$ for each $i$. Then</p>
+<p>$$
+\Pr(\forall i,\; R_i = O) = (1/k)^s.
+$$</p>
+<h3 id="one-random-linear-combo-analyzed">“One random linear combo” analyzed</h3>
+<p>Pick random coefficients $c_1,\dots,c_s$ (from the field $\mathbb{F}_p$), set</p>
+<p>$$
+Q = \sum_i [c_i] P_i,\qquad \text{check } [n]Q = \sum_i [c_i] R_i = O \text{ in } H.
+$$</p>
+<p><strong>Key fact:</strong> on a subgroup of size $k$, multiplying by any integer $c$ depends only on $c \bmod k$. (Because every $h \in H$ satisfies $[k]h = O$, so $[c]h = [\,c \bmod k\,]h$.) Thus only the residues $c_i \bmod k$ matter; with random field coefficients these residues are essentially uniform in $\mathbb{Z}_k$.</p>
+<p>Conditioned on the $R_i$ being random (they are), they almost surely generate all of $H$. Then the sum $\sum_i (c_i \bmod k)\, R_i$ is <strong>uniform</strong> in $H$. A uniform element of a $k$-element group is the identity with probability exactly $1/k$. One random linear relation removes <strong>one</strong> degree of freedom—no more.</p>
+<blockquote>
+<p><strong>Counting picture (cyclic $H$).</strong> If $H=\langle g\rangle$ and $R_i = b_i g$ (with some $b_i \not\equiv 0 \mod k$), the acceptance condition is one linear equation
+$\sum_i (c_i b_i) \equiv 0 \ (\bmod\ k)$. Among the $k^s$ residue vectors $(c_1,\dots,c_s) \bmod k$, exactly $k^{s-1}$ satisfy it ⇒ probability $1/k$.</p>
+</blockquote>
+<p><strong>Conclusion:</strong> collapsing $s$ checks into one random linear combination buys you <strong>cost</strong> (one check instead of $s$) but destroys <strong>soundness</strong>, from $(1/k)^s$ down to $1/k$.</p>
+<h2 id="takeaway-dont-blindly-port-one-random-linear-check-from-field-settings-into-group-settings-with-cofactors-count-independent-constraints-not-just-operations-thats-the-difference-between-negligible-and-oops"><strong>Takeaway.</strong>  Don’t blindly port “one random linear check” from field settings into group settings with cofactors. Count independent constraints, not just operations. That’s the difference between “negligible” and “oops.”</h2>
+<h2 id="a-precise-toy-example-you-can-hold-in-your-head">A precise toy example you can hold in your head</h2>
+<p>Take $G = \mathbb{Z}_{15}$ under addition (identity $0$). We “want” order $n=5$, but the true size is $15 = 3 \cdot 5$, so the cofactor is $k=3$.</p>
+<ul>
+<li>The map $[5]: x \mapsto 5x \pmod{15}$ has
+  <strong>image</strong> ${0,5,10}$ (size 3) and <strong>kernel</strong> ${0,3,6,9,12}$ (size 5).</li>
+</ul>
+<p><strong>Naïve (s=2).</strong> Pick $P_1,P_2 \in {0,\dots,14}$ uniformly; set $R_i = 5 P_i \pmod{15}$. Each $R_i$ is uniform in ${0,5,10}$ so $\Pr(R_i=0)=1/3$. Both zero with probability $(1/3)^2 = 1/9$.</p>
+<p><strong>Compressed (s=2).</strong> Pick random coefficients $c_1,c_2$; form $Q = c_1 P_1 + c_2 P_2 \pmod{15}$; accept if $5Q \equiv 0$.
+This is equivalent to a <strong>single</strong> linear equation modulo 3:
+$c_1 (5P_1) + c_2 (5P_2) \equiv 0 \ (\bmod 15)$ ⇔ $(c_1 \bmod 3) (R_1/5) + (c_2 \bmod 3) (R_2/5) \equiv 0 \ (\bmod 3)$.
+Exactly one third of coefficient pairs satisfy it ⇒ acceptance probability $1/3$, not $1/9$.</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">math</span>
+
+<span class="k">def</span> <span class="nf">simulate_small_example</span><span class="p">(</span>
+    <span class="n">N</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">n_claim</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">s_values</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">4</span><span class="p">,</span><span class="mi">5</span><span class="p">),</span> <span class="n">trials</span><span class="o">=</span><span class="mi">200_000</span><span class="p">,</span> <span class="n">p_field</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">123</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Monte Carlo on G = Z_N (additive). True size N = k * n_claim.</span>
+<span class="sd">    - Naive: check [n]P_i == 0 for i=1..s independently  -&gt; expected accept (1/k)^s</span>
+<span class="sd">    - Compressed: pick random coeffs c_i in F_p, form Q = sum c_i P_i, check [n]Q == 0</span>
+<span class="sd">      -&gt; conditional on NOT(all [n]P_i==0), accept ~ 1/k exactly.</span>
+<span class="sd">         Unconditional accept ≈ 1/k + (1/k)^s - (1/k)*(1/k)^s.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">N</span> <span class="o">%</span> <span class="n">n_claim</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Require N to be a multiple of n_claim.&quot;</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">N</span> <span class="o">//</span> <span class="n">n_claim</span>  <span class="c1"># cofactor</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;=== Monte Carlo on Z_</span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2">, claimed n = </span><span class="si">{</span><span class="n">n_claim</span><span class="si">}</span><span class="s2">, cofactor k = </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">, trials per s = </span><span class="si">{</span><span class="n">trials</span><span class="si">}</span><span class="s2"> ===&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;(Coefficients sampled from F_</span><span class="si">{</span><span class="n">p_field</span><span class="si">}</span><span class="s2">, effectively reduced mod k=</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> on the image subgroup)</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;s&#39;</span><span class="si">:</span><span class="s2">&gt;2</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="s1">&#39;naive_accept&#39;</span><span class="si">:</span><span class="s2">&gt;13</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="s1">&#39;naive_pred&#39;</span><span class="si">:</span><span class="s2">&gt;11</span><span class="si">}</span><span class="s2">  &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;compr_accept&#39;</span><span class="si">:</span><span class="s2">&gt;13</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="s1">&#39;compr_pred(~1/k)&#39;</span><span class="si">:</span><span class="s2">&gt;17</span><span class="si">}</span><span class="s2">  &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;compr_accept | not-all-zero&#39;</span><span class="si">:</span><span class="s2">&gt;28</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;-&quot;</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">header</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">s_values</span><span class="p">:</span>
+        <span class="n">naive_accept</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">comp_accept</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">comp_accept_and_notallzero</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">comp_notallzero_count</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">trials</span><span class="p">):</span>
+            <span class="c1"># s random points P_i in Z_N</span>
+            <span class="n">P</span> <span class="o">=</span> <span class="p">[</span><span class="n">rng</span><span class="o">.</span><span class="n">randrange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">s</span><span class="p">)]</span>
+            <span class="c1"># R_i = [n]P_i = n_claim * P_i mod N  (lies in image subgroup of size k)</span>
+            <span class="n">R</span> <span class="o">=</span> <span class="p">[(</span><span class="n">n_claim</span> <span class="o">*</span> <span class="n">Pi</span><span class="p">)</span> <span class="o">%</span> <span class="n">N</span> <span class="k">for</span> <span class="n">Pi</span> <span class="ow">in</span> <span class="n">P</span><span class="p">]</span>
+
+            <span class="c1"># Naive: all R_i must be 0</span>
+            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">r</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">R</span><span class="p">):</span>
+                <span class="n">naive_accept</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="c1"># Compressed: random field coeffs, one combined check</span>
+            <span class="n">coeffs</span> <span class="o">=</span> <span class="p">[</span><span class="n">rng</span><span class="o">.</span><span class="n">randrange</span><span class="p">(</span><span class="n">p_field</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">s</span><span class="p">)]</span>
+            <span class="n">Q</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">ci</span> <span class="o">*</span> <span class="n">Pi</span> <span class="k">for</span> <span class="n">ci</span><span class="p">,</span> <span class="n">Pi</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">coeffs</span><span class="p">,</span> <span class="n">P</span><span class="p">))</span> <span class="o">%</span> <span class="n">N</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">n_claim</span> <span class="o">*</span> <span class="n">Q</span><span class="p">)</span> <span class="o">%</span> <span class="n">N</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">comp_accept</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="c1"># Conditional acceptance given NOT(all R_i == 0)</span>
+            <span class="n">not_all_zero</span> <span class="o">=</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">r</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">R</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">not_all_zero</span><span class="p">:</span>
+                <span class="n">comp_notallzero_count</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">n_claim</span> <span class="o">*</span> <span class="n">Q</span><span class="p">)</span> <span class="o">%</span> <span class="n">N</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">comp_accept_and_notallzero</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">naive_rate</span> <span class="o">=</span> <span class="n">naive_accept</span> <span class="o">/</span> <span class="n">trials</span>
+        <span class="n">naive_pred</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">k</span><span class="p">)</span> <span class="o">**</span> <span class="n">s</span>
+
+        <span class="n">comp_rate</span> <span class="o">=</span> <span class="n">comp_accept</span> <span class="o">/</span> <span class="n">trials</span>
+        <span class="n">comp_pred</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">k</span>  <span class="c1"># asymptotically (exact conditional on not-all-zero)</span>
+
+        <span class="n">comp_cond_rate</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">comp_accept_and_notallzero</span> <span class="o">/</span> <span class="n">comp_notallzero_count</span>
+            <span class="k">if</span> <span class="n">comp_notallzero_count</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;nan&#39;</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">s</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">naive_rate</span><span class="si">:</span><span class="s2">13.6f</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">naive_pred</span><span class="si">:</span><span class="s2">11.6f</span><span class="si">}</span><span class="s2">  &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">comp_rate</span><span class="si">:</span><span class="s2">13.6f</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">comp_pred</span><span class="si">:</span><span class="s2">17.6f</span><span class="si">}</span><span class="s2">  &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">comp_cond_rate</span><span class="si">:</span><span class="s2">28.6f</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="c1"># Default demo: Z_15, n=5 -&gt; k=3</span>
+    <span class="n">simulate_small_example</span><span class="p">()</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code>=== Monte Carlo on Z_15, claimed n = 5, cofactor k = 3, trials per s = 200000 ===
+(Coefficients sampled from F_15, effectively reduced mod k=3 on the image subgroup)
+
+ s   naive_accept   naive_pred   compr_accept   compr_pred(~1/k)   compr_accept | not-all-zero
+----------------------------------------------------------------------------------------------
+ 1       0.333620     0.333333       0.554870           0.333333                      0.332018
+ 2       0.112160     0.111111       0.408285           0.333333                      0.333534
+ 3       0.036600     0.037037       0.357465           0.333333                      0.333055
+ 4       0.012750     0.012346       0.341315           0.333333                      0.332808
+ 5       0.003980     0.004115       0.334105           0.333333                      0.331444
+</code></pre></div>
+</body></html>
