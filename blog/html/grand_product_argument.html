@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>grand_product_argument</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { color-scheme: light dark; }
+body {
+  margin: 2rem auto;
+  max-width: 860px;
+  padding: 0 1rem;
+  font: 16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";
+}
+h1,h2,h3 { line-height: 1.25; }
+h1 { font-size: 1.9rem; margin-top: 0; }
+h2 { font-size: 1.5rem; margin-top: 2.2rem; }
+h3 { font-size: 1.2rem; margin-top: 1.6rem; }
+code, pre {
+  font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-size: .95em;
+}
+pre {
+  background: rgba(127,127,127,.1);
+  border: 1px solid rgba(127,127,127,.3);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow: auto;
+}
+blockquote {
+  margin: 1rem 0;
+  padding: .5rem 1rem;
+  border-left: 4px solid #888;
+  background: rgba(127,127,127,.08);
+  border-radius: 6px;
+}
+
+/* --- improved list indentation for mixed list types --- */
+:root {
+  --indent-1: 2.25rem;
+  --indent-2: 4.25rem;
+  --indent-3: 6.25rem;
+  --indent-4: 8.25rem;
+}
+
+ol, ul {
+  margin: 0.4em 0;
+  padding-left: var(--indent-1);
+  list-style-position: outside;
+}
+
+li > ol, li > ul {
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
+  padding-left: var(--indent-2);
+}
+
+li li > ol, li li > ul {
+  padding-left: var(--indent-3);
+}
+
+li li li > ol, li li li > ul {
+  padding-left: var(--indent-4);
+}
+
+/* special case: unordered inside ordered (like #3. followed by bullets) */
+ol > li > ul {
+  margin-top: 0.4em;
+  padding-left: calc(var(--indent-2) + 1rem);
+}
+
+ul > li > ol {
+  padding-left: calc(var(--indent-2) + 1rem);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid rgba(127,127,127,.3);
+  margin: 2rem 0;
+}
+</style>
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['$','$'], ['\\(','\\)']],
+      displayMath: [['$$','$$'], ['\\[','\\]']]
+    },
+    options: {
+      skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+    }
+  };
+</script>
+<script async id="MathJax-script"
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head><body>
+<h2 id="polynomial-intersection-via-grand-product-arguments">Polynomial Intersection via Grand-Product Arguments</h2>
+<p>In many modern SNARK systems (most notably <strong>PLONK</strong>) we often need to prove that two sets of polynomial evaluations are the same <em>up to permutation</em>.
+This arises in <strong>copy constraints</strong>, where a prover must show that certain wires in a circuit carry the same value, even though they may appear in different columns or positions in the evaluation table.</p>
+<p>At its heart, this problem is purely algebraic:
+given two low-degree polynomials $f_1$ and $f_2$, we want to prove that their evaluations <strong>intersect</strong> over a known domain $D$. 
+That is, for some permutation $\sigma$, we want to show:</p>
+<div> 
+\[
+\\{f_1(d_i) \\}_{i=0}^{n-1} = \\{ f_2(d_{\sigma(i)}) \\}_{i=0}^{n-1}
+\]
+</div>
+
+<p>The <strong>grand-product argument</strong> is the elegant algebraic trick that makes this possible with only constant-size proofs.
+It transforms the set equality condition into a single multiplicative relation that can be verified by checking that a certain <em>running product polynomial</em> $Z(X)$ behaves consistently across the domain.</p>
+<hr />
+<h3 id="setup">Setup</h3>
+<p>Let $D = { d_0, \dots, d_{n-1} } \subset \mathbb{F}_p$ be a public evaluation domain with <strong>vanishing polynomial</strong></p>
+<p>$$
+V_D(X) = \prod_{i=0}^{n-1} (X - d_i).
+$$</p>
+<p>Suppose two polynomials $f_1, f_2 \in \mathbb{F}_p[X]$ are committed under KZG commitments:</p>
+<p>$$
+C_1 = \mathsf{KZG}(f_1), \qquad C_2 = \mathsf{KZG}(f_2).
+$$</p>
+<p>We wish to prove that <strong>the evaluations of $f_1$ and $f_2$ coincide up to a permutation</strong> of the domain $D$.
+Let $\sigma$ be such a permutation, encoded by a low-degree permutation polynomial $\pi$ satisfying</p>
+<p>$$
+\pi(d_i) = d_{\sigma(i)}.
+$$</p>
+<hr />
+<h3 id="constructing-the-grand-product-polynomial">Constructing the Grand Product Polynomial</h3>
+<p>The prover defines a <em>running product</em> polynomial $Z(X)$ of degree ≤ n by the recurrence:</p>
+<p>$$
+Z(d_0) = 1, \qquad
+Z(d_{i+1}) = Z(d_i) \cdot \frac{f_1(d_i)}{f_2(\pi(d_i))}, \quad (i = 0, \dots, n-2).
+$$</p>
+<p>Intuitively, if all ratios $f_1(d_i) / f_2(\pi(d_i)) = 1$,
+then $Z(d_n) = 1$.
+Otherwise, the product accumulates any discrepancy.</p>
+<p>This construction encodes the <strong>permutation check</strong> between the evaluations of $f_1$ and $f_2$.</p>
+<hr />
+<h3 id="encoding-the-recurrence-as-a-polynomial-identity">Encoding the Recurrence as a Polynomial Identity</h3>
+<p>To express the recurrence in polynomial form, define a <em>next-point</em> map $\tau$ on $D$ such that</p>
+<p>$$
+\tau(d_i) = d_{i+1}.
+$$</p>
+<p>Now form the polynomial</p>
+<p>$$
+P(X) = Z(\tau(X)) f_2(\pi(X)) - Z(X) f_1(X).
+$$</p>
+<p>By construction,
+$P(x) = 0$ for all $x \in D$ <strong>if and only if</strong> the recurrence holds for every adjacent pair in the domain.</p>
+<p>The prover then defines a quotient polynomial $Q(X)$ such that</p>
+<p>$$
+P(X) = Q(X) , V_D(X),
+$$
+which enforces the vanishing condition over $D$.</p>
+<hr />
+<h3 id="commitments-and-proof">Commitments and Proof</h3>
+<p>The prover sends:</p>
+<p>$$
+C_Z = \mathsf{KZG}(Z(X)), \qquad C_Q = \mathsf{KZG}(Q(X)).
+$$</p>
+<p>Using Fiat–Shamir, the verifier samples a random evaluation point $z \notin D$,
+and the prover provides constant-size KZG openings at $z$ and $\tau(z)$ for:</p>
+<p>$$
+Z(X), \quad f_1(X), \quad f_2(\pi(X)), \quad Q(X).
+$$</p>
+<hr />
+<h3 id="verification-steps">Verification Steps</h3>
+<ol>
+<li><strong>Initialization check:</strong> verify $Z(d_0) = 1$ via an opening at $d_0$.</li>
+<li><strong>Recurrence check:</strong>
+   $$
+   P(z) = Z(\tau(z)) f_2(\pi(z)) - Z(z) f_1(z).
+   $$</li>
+<li><strong>Quotient relation:</strong>
+   $$
+   P(z) = Q(z) , V_D(z).
+   $$</li>
+</ol>
+<p>All of these checks can be verified using <strong>one pairing equation</strong> through batched openings
+(as described in the <em>PLONK</em> paper, p. 13).</p>
+<hr />
+<h3 id="soundness-intuition">Soundness Intuition</h3>
+<p>Soundness of the grand-product argument ensures:</p>
+<p>$$
+\prod_{i=0}^{n-1} \frac{f_1(d_i)}{f_2(d_{\sigma(i)})} = 1,
+$$</p>
+<p>which implies that the multisets of evaluations coincide:</p>
+<p>$$
+{ f_1(d_i) } = { f_2(d_{\sigma(i)}) }.
+$$</p>
+<p>In other words, the prover convinces the verifier that
+<strong>the two committed polynomials evaluate to the same values up to a known permutation of the domain</strong>.</p>
+</body></html>
