@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>sigma</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { color-scheme: light dark; }
+body {
+  margin: 2rem auto;
+  max-width: 860px;
+  padding: 0 1rem;
+  font: 16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";
+}
+h1,h2,h3 { line-height: 1.25; }
+h1 { font-size: 1.9rem; margin-top: 0; }
+h2 { font-size: 1.5rem; margin-top: 2.2rem; }
+h3 { font-size: 1.2rem; margin-top: 1.6rem; }
+code, pre {
+  font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-size: .95em;
+}
+pre {
+  background: rgba(127,127,127,.1);
+  border: 1px solid rgba(127,127,127,.3);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow: auto;
+}
+blockquote {
+  margin: 1rem 0;
+  padding: .5rem 1rem;
+  border-left: 4px solid #888;
+  background: rgba(127,127,127,.08);
+  border-radius: 6px;
+}
+
+/* --- improved list indentation for mixed list types --- */
+:root {
+  --indent-1: 2.25rem;
+  --indent-2: 4.25rem;
+  --indent-3: 6.25rem;
+  --indent-4: 8.25rem;
+}
+
+ol, ul {
+  margin: 0.4em 0;
+  padding-left: var(--indent-1);
+  list-style-position: outside;
+}
+
+li > ol, li > ul {
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
+  padding-left: var(--indent-2);
+}
+
+li li > ol, li li > ul {
+  padding-left: var(--indent-3);
+}
+
+li li li > ol, li li li > ul {
+  padding-left: var(--indent-4);
+}
+
+/* special case: unordered inside ordered (like #3. followed by bullets) */
+ol > li > ul {
+  margin-top: 0.4em;
+  padding-left: calc(var(--indent-2) + 1rem);
+}
+
+ul > li > ol {
+  padding-left: calc(var(--indent-2) + 1rem);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid rgba(127,127,127,.3);
+  margin: 2rem 0;
+}
+</style>
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['$','$'], ['\\(','\\)']],
+      displayMath: [['$$','$$'], ['\\[','\\]']]
+    },
+    options: {
+      skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+    }
+  };
+</script>
+<script async id="MathJax-script"
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head><body>
+<h1 id="sigma-protocols-and-how-to-or-them">Sigma Protocols and How to OR Them</h1>
+<p>Σ-protocols (Sigma protocols) are a family of <strong>three-move interactive proofs of knowledge</strong> that let a prover convince a verifier that they know a secret witness satisfying some public relation (without revealing the witness itself).</p>
+<p>They form the foundation of many zero-knowledge constructions such as Schnorr proofs, range proofs, and zkSNARK components.</p>
+<p>At their core, all Σ-protocols follow a simple template:</p>
+<ol>
+<li><strong>Commit:</strong> the prover commits to a random value.</li>
+<li><strong>Challenge:</strong> the verifier sends a random challenge.</li>
+<li><strong>Response:</strong> the prover replies with a value that “binds” the commitment to the secret.</li>
+</ol>
+<hr />
+<h2 id="what-well-cover">What we’ll cover</h2>
+<ol>
+<li>
+<p><strong>Warm-up: Schnorr proof of knowledge (PoK) of a discrete log.</strong>
+   The canonical Σ-protocol: prove knowledge of $x$ such that $X = g^x$.</p>
+</li>
+<li>
+<p><strong>OR-composition of Σ-protocols.</strong>
+   The simulate-one / prove-one pattern: tie two branches with a <em>single</em> global challenge so you can’t fake both.</p>
+</li>
+<li>
+<p><strong>Three Σ-protocols over Pedersen commitments ($C = g^r h^m$):</strong></p>
+<ul>
+<li><strong>PoK of the opening</strong> $(r,m)$.</li>
+<li><strong>Equality to a known constant</strong>: prove $m = m^*$ without revealing $r$.</li>
+<li><strong>Bitness</strong>: prove $m \in {0,1}$ via an <strong>OR-proof</strong>. Ergo, show $C = g^{r}$ <strong>or</strong> $C = g^{r}h$ without revealing which.</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2 id="schnorr-proof-of-knowledge-of-a-discrete-log">Schnorr Proof of Knowledge of a Discrete Log</h2>
+<p>Recall the classic Σ-protocol for proving knowledge of a discrete logarithm.</p>
+<p>We work in a cyclic group $G = \langle g \rangle$ of order $q$.
+The public value is $X = g^{x}$, and the prover wishes to prove knowledge of $x$ without revealing it.</p>
+<h3 id="protocol">Protocol</h3>
+<p><strong>Prover</strong> (knows $x$)</p>
+<ol>
+<li>Pick $k \leftarrow \mathbb{Z}_q$.</li>
+<li>Send $T = g^{k}$.</li>
+<li>Receive challenge $e \leftarrow \mathbb{Z}_q$.</li>
+<li>Compute $s = k - e x \bmod q$.</li>
+<li>Send $s$.</li>
+</ol>
+<p><strong>Verifier</strong>
+Check
+$$
+g^{s} \stackrel{?}{=} T \cdot X^{e}.
+$$
+Accept if true.</p>
+<p><strong>Fiat–Shamir (Non-interactive)</strong>
+Set $e = H(g, X, T)$ for a hash function $H$.
+Then the transcript $(T, s)$ is a non-interactive proof of knowledge of $x$.</p>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> The prover blinds $x$ with randomness $k$.
+The verifier’s challenge $e$ forces the prover to “open” this commitment consistently,
+so only someone who knows $x$ can produce a valid response.</p>
+</blockquote>
+<hr />
+<h2 id="combining-two-protocols-the-or-proof-skeleton">🔀 Combining Two Σ-Protocols: The OR-Proof Skeleton</h2>
+<p>Before we move on to commitments, it’s useful to see how to <strong>combine two Σ-protocols</strong> into an <strong>OR-proof</strong> — one that proves knowledge of <em>either</em> of two secrets, without revealing which.</p>
+<h3 id="or-proof-skeleton-you-know-x_1-dont-know-x_2">OR-Proof Skeleton (you know $x_1$, don’t know $x_2$)</h3>
+<p><strong>Public:</strong> $(g, q, y_1 = g^{x_1}, y_2 = g^{x_2})$</p>
+<ol>
+<li>
+<p><strong>Commit phase (before global challenge $e$):</strong></p>
+<ul>
+<li>
+<p><strong>Real branch (#1):</strong>
+ pick $k_1 \leftarrow \mathbb{Z}_q$; set $t_1 = g^{k_1}$.</p>
+</li>
+<li>
+<p><strong>Fake branch (#2):</strong>
+ pick $e_2, s_2 \leftarrow \mathbb{Z}_q$ independently at random,
+ then set
+ $$
+ t_2 := g^{s_2} \, y_2^{e_2}.
+ $$
+ This makes $(t_2, e_2, s_2)$ a <em>valid-looking</em> Schnorr transcript without needing $x_2$.</p>
+</li>
+</ul>
+<p>Send $(t_1, t_2)$.</p>
+</li>
+<li>
+<p><strong>Challenge:</strong>
+   Verifier sends global $e \leftarrow \mathbb{Z}_q$.
+   Split it as $e_1 = (e - e_2) \bmod q$.</p>
+</li>
+<li>
+<p><strong>Responses:</strong></p>
+</li>
+</ol>
+<ul>
+<li><strong>Real branch (#1):</strong> compute $s_1 = k_1 - e_1 x_1 \bmod q$.</li>
+<li><strong>Fake branch (#2):</strong> already have $s_2$.
+     Send $(e_1, e_2, s_1, s_2)$.</li>
+</ul>
+<ol start="4">
+<li>
+<p><strong>Verifier checks:</strong></p>
+<ul>
+<li>$e \stackrel{?}{=} (e_1 + e_2) \bmod q$</li>
+<li>$g^{s_1} y_1^{e_1} \stackrel{?}{=} t_1$</li>
+<li>$g^{s_2} y_2^{e_2} \stackrel{?}{=} t_2$</li>
+</ul>
+</li>
+</ol>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> You “prove one and simulate one.”
+The fake branch looks valid because you chose $e_2, s_2$ to satisfy the equation synthetically.
+The real branch ties to your secret through $e_1 = e - e_2$.
+The global challenge ensures you can’t fake both simultaneously.</p>
+</blockquote>
+<p>This pattern will be reused later to prove that a Pedersen commitment hides a bit $m \in {0,1}$.</p>
+<hr />
+<h2 id="from-schnorr-to-commitments">🔒 From Schnorr to Commitments</h2>
+<p>Schnorr proofs handle a single secret exponent.
+Pedersen commitments extend this by hiding <strong>two unknowns</strong> $(r, m)$:
+$$
+C = g^{r} h^{m},
+$$
+where $g, h$ are independent generators of the same group.</p>
+<p>The same Σ-protocol logic applies — we just track two exponents.</p>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> The commitment $C$ binds two secrets:
+$r$ (randomness) ensures <em>hiding</em>, while $m$ ensures <em>binding</em>.</p>
+</blockquote>
+<hr />
+<h2 id="1-proof-of-knowledge-of-the-opening-r-m">1️⃣ Proof of Knowledge of the Opening $(r, m)$</h2>
+<p><strong>Goal:</strong> Prove knowledge of $(r, m)$ such that $C = g^{r} h^{m}$.</p>
+<p><strong>Prover (knows $r, m$):</strong></p>
+<ol>
+<li>Pick $k_r, k_m \leftarrow \mathbb{Z}_q$.</li>
+<li>Send $T = g^{k_r} h^{k_m}$.</li>
+<li>Receive challenge $e \leftarrow \mathbb{Z}_q$.</li>
+<li>Compute
+   $$
+   s_r = k_r - e r \bmod q, \quad s_m = k_m - e m \bmod q.
+   $$</li>
+<li>Send $(s_r, s_m)$.</li>
+</ol>
+<p><strong>Verifier:</strong>
+Check
+$$
+g^{s_r} h^{s_m} \stackrel{?}{=} T \cdot C^{e}.
+$$</p>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> This is just a 2-dimensional Schnorr proof —
+you’re proving knowledge of two linked exponents.</p>
+</blockquote>
+<hr />
+<h2 id="2-proof-that-the-committed-value-equals-a-known-constant-m">2️⃣ Proof that the Committed Value Equals a Known Constant $m^*$</h2>
+<p><strong>Goal:</strong> Prove that $m = m^*$ without revealing $r$.</p>
+<p>Since
+$$
+C = g^{r} h^{m^<em>} \iff C \cdot h^{-m^</em>} = g^{r},
+$$
+this reduces to a simple Schnorr proof of knowledge of $r$.</p>
+<p>Let $C' = C \cdot h^{-m^*} = g^{r}$.</p>
+<p><strong>Protocol:</strong></p>
+<ol>
+<li>Pick $k \leftarrow \mathbb{Z}_q$; send $T = g^{k}$.</li>
+<li>Receive $e \leftarrow \mathbb{Z}_q$.</li>
+<li>Compute $s = k - e r \bmod q$.</li>
+<li>Send $s$.</li>
+<li>Verifier checks
+   $$
+   g^{s} \stackrel{?}{=} T \cdot (C \cdot h^{-m^*})^{e}.
+   $$</li>
+</ol>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> Subtracting $m^*$ from the commitment removes the message,
+leaving a plain Schnorr proof of the randomness $r$.</p>
+</blockquote>
+<hr />
+<h2 id="3-proof-that-m-in-01-bitness-via-or-of-two-protocols">3️⃣ Proof that $m \in {0,1}$ — Bitness via OR of Two Σ-Protocols</h2>
+<p>We now combine two Σ-protocols into one <strong>OR-proof</strong>, showing that <em>one of two statements</em> holds without revealing which.</p>
+<p>We want to prove that the committed message is a bit:
+$$
+m \in {0,1}.
+$$
+Equivalently, $C$ must satisfy either
+$$
+C = g^{r} \quad \text{or} \quad C = g^{r} h.
+$$</p>
+<p>That is:</p>
+<ul>
+<li><strong>Branch 0:</strong> “$m=0$” and know $r$ ⇒ $C = g^{r}$.</li>
+<li><strong>Branch 1:</strong> “$m=1$” and know $r$ ⇒ $C h^{-1} = g^{r}$.</li>
+</ul>
+<p><strong>Public:</strong> $(g, h, C)$
+<strong>Prover:</strong> knows $r$ for one branch.</p>
+<p><strong>Protocol Sketch:</strong></p>
+<ol>
+<li>Define targets: $\text{target}_0 = C$, $ \text{target}_1 = C h^{-1}$.</li>
+<li>
+<p>Simulate one branch: choose random $ e_{\text{fake}}, s_{\text{fake}} \leftarrow \mathbb{Z}_q $,
+   set
+ <br />
+<div> 
+   \[
+    T_{\text{fake}} = g^{s_{\text{fake}}}, \text{target}_{\text{fake}}^{e_{\text{fake}}}.
+    \]
+    </div>
+</p>
+</li>
+<li>
+<p>On the real branch, pick $k$, compute $T_{\text{real}} = g^{k}$.</p>
+</li>
+<li>Send $(T_0, T_1)$.</li>
+<li>Receive global $e \leftarrow \mathbb{Z}_q$; split $e = e_0 + e_1 \bmod q$.</li>
+<li>Compute $s_{\text{real}} = k - e_{\text{real}} r \bmod q$.</li>
+<li>Send $(e_0, e_1, s_0, s_1)$.</li>
+</ol>
+<p><strong>Verifier:</strong></p>
+<ul>
+<li>Check $e = e_0 + e_1 \bmod q$.</li>
+<li>For each branch $b \in {0,1}$:
+  $$
+  g^{s_b} \stackrel{?}{=} T_b \cdot (\text{target}_b)^{e_b}.
+  $$
+  Accept if all hold.</li>
+</ul>
+<blockquote>
+<p>💡 <strong>Intuition:</strong> You prove that your commitment opens to either 0 or 1.
+The real branch ties to your secret, the fake branch is simulated.
+The single global challenge glues both together securely.</p>
+</blockquote>
+</body></html>
